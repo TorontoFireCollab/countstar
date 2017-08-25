@@ -1,4 +1,4 @@
-= Gutermuth Criteria
+= How to Count Stars
 CITA
 :toc: left
 :toclevels: 4
