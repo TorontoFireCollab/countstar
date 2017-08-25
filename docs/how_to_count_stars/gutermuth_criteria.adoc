@@ -1,0 +1,45 @@
+= Gutermuth Criteria
+CITA
+:toc: left
+:toclevels: 4
+:doctype: book
+:chapter-label:
+:source-highlighter: pygments
+:pygments-style: autumn
+:sectnums:
+:stem:
+:sectnumlevels: 3
+:mum: μm
+:sigma: σ
+:math:
+:stem: latexmath
+:mathematical-format: svg
+:imagedir: images
+
+include::data_prep.adoc[]
+
+include::phase1.adoc[]
+
+include::phase2.adoc[]
+
+include::phase3.adoc[]
+
+include::phaseagb.adoc[]
+
+include::compute_spectral_index.adoc[]
+
+include::analysis.adoc[]
+
+//include::run.adoc[]
+
+
+
+
+
+
+
+
+
+
+
+

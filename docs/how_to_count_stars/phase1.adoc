@@ -1,0 +1,335 @@
+:stem: latexmath
+
+== Phase I
+
+=== Initialize with `init`
+
+Phase 1 is applied to all data with photometric uncertainties σ < 0.2 mag detections in all four IRAC bands.
+
+`init` Extract data that is going to be used for Phase 1. 
+
+[source, python]
+----
+def init(con, source):
+    cur = con.cursor()
+    target = source + '_p1'
+    cur.execute('''CREATE TABLE ''' + target + ''' AS 
+                   SELECT desig, m3_6, m4_5, m5_8, m8_0, 
+                                dm3_6, dm4_5, dm5_8, dm8_0, 
+                                c3645, c3658, c3680, c4558, c4580, c5880,
+                                Type FROM ''' + source + 
+                ''' WHERE (m5_8 IS NOT NULL) AND 
+                          (m8_0 IS NOT NULL) AND 
+                          dm3_6 < ? AND 
+                          dm4_5 < ? AND 
+                          dm5_8 < ? AND 
+                          dm8_0 < ?''', [0.2]*4)
+    return target
+----
+
+Function takes two arguments:
+
+--
+* `con`: connection to database
+* `source`: name of the source table, in this case, the name of the master table. 
+--
+
+Function returns the name of the table created. All data used for Phase 1 comes from this table.  
+
+
+=== Extract PAH galaxies: `extract_19`
+
+Extract PAH galaxies (Type = 19 per Gutermuth's convention).
+
+Extract `desig` of objects that satisfy PAH Criterion 1 *or* PAH Criterion 2. 
+
+* PAH Criterion 1: 
+
+[latexmath]
+++++
+\begin{align*}
+[4.5] - [5.8] &< \frac{1.05}{1.2} \times ([5.8] - [8.0] - 1) \\\\
+[4.5] - [5.8] &< 1.05 \\\\
+[5.8] - [8.0] &> 1 \\\\
+[4.5] &> 11.5
+\end{align*}
+++++
+
+
+* PAH Criterion 2:
+
+[latexmath]
+++++
+\begin{align*}
+[3.6] - [5.8] &< \frac{1.5}{2} \times ([4.5] - [8.0] - 1) \\\\
+[3.6] - [5.8] &< 1.5 \\\\
+[4.5] - [8.0] &> 1 \\\\
+[4.5] &> 11.5
+\end{align*}
+++++
+
+[source,python]
+----
+def extract_19(con, source):
+    cur = con.cursor()
+    #CREATE TABLE containing PAH galaxies
+    target = source + '_19'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS 
+                   SELECT desig FROM ''' + source + ''' WHERE Type IS NULL AND
+                   ((c4558  < (1.05/1.2) * (c5880 - 1)) AND
+                    (c4558 < 1.05) AND
+                    (c5880 > 1) AND
+                    (m4_5 > 11.5))
+                    OR
+                   ((c3658 < (1.5/2) * (c4580 -1)) AND
+                    (c3658 < 1.5) AND
+                    (c4580 > 1) AND
+                    (m4_5 > 11.5))''')
+    return target
+----
+
+Function takes two arguments:
+
+* `con`: connection to database
+* `source`: name of the source table, in this case, the name of the master table. 
+
+Function returns the name of the table containing extracted object `desig`. This table will be used to update object types in the master table. 
+
+=== Extract AGNs: `extract_29`
+
+Extract AGNs (Type = 29 by Gutermuth's convention).
+Extract objects that satisfy:
+
+*ALL* of the following:
+
+[latexmath]
+++++
+\begin{align*}
+[4.5] - [8.0] &> 0.5 \\\\
+[4.5] &> 13.5 + ([4.5] - [8.0] - 2.3)/0.4 \\\\
+[4.5] &> 13.5  \\\\
+\end{align*}
+++++
+
+*AND ONE* of the following:
+[latexmath]
+++++
+\begin{align*}
+[4.5] &> 14 + ([4.5] - [8.0] - 0.5) \\\\
+[4.5] &> 14.5 - ([4.5] - [8.0] - 1.2)/0.3 \\\\
+[4.5] &> 14.5 
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_29(con, source):
+    cur = con.cursor()
+    #CREATE TABLE containing AGN
+    target = source + '_29'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS 
+                   SELECT desig FROM ''' + source + ''' WHERE Type IS NULL AND
+                  (c4580 > 0.5 AND m4_5 > 13.5 +(c4580 - 2.3)/0.4 AND m4_5 > 13.5) 
+                  AND
+                  (m4_5 > 14 + (c4580 - 0.5) OR m4_5 > 14.5 - (c4580 - 1.2)/0.3 OR m4_5 > 14.5)''')
+    return target
+----
+Function returns the name of the table containing extracted object `desig`. This table will be used to update object types in the master table. 
+
+=== Extract Shock Gass Emission: `extract_9`
+
+Extract shock gas emission (Type = 9). Extract objects that satisfy *ALL* of the following:
+
+[latexmath]
+++++
+\begin{align*}
+[3.6] - [4.5] &> \frac{1.2}{0.55} \times (([4.5] - [5.8]) - 0.3) + 0.8 \\\\
+[4.5] - [5.8] &\leq 0.85 \\\\
+[3.6] - [4.5] &> 1.05
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_9(con, source):
+    cur = con.cursor()
+    #CREATE TABLE containing shock gas emission 
+    target = source + '_9'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS 
+                   SELECT desig FROM '''+ source + ''' WHERE Type IS NULL AND 
+                   (c3645 > (1.2/0.55)*(c4558 - 0.3)+0.8) AND
+                   (c4558 <= 0.85) AND
+                   (c3645 > 1.05)''')
+    return target
+----
+
+Function returns the name of the table containing extracted object `desig`. This table will be used to update object types in the master table. 
+
+=== Extract PAH contaminated sources: `extract_20`
+
+Extract PAH contaminated sources (Type = 20)
+Extract objects that satisfy BOTH of the following:
+
+[latexmath]
+++++
+\begin{align*}
+\sigma_1 &:= \sigma {[[4.5] - [5.8]]} \\\\
+\sigma_2 &:= \sigma {[[3.6] - [4.5]]} \\\\
+[3.6] - [4.5] - \sigma_2 &\leq 1.4 \times (([4.5] - [5.8]) + \sigma_1 - 0.7) + 0.15 \\\\
+[3.6] - [4.5] - \sigma_2 &\leq 1.65
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_20(con, source, sigmaswitch):
+    #CREATE TABLE containing pah contaminated apertures
+    cur = con.cursor()
+    target = source + '_20'
+    if sigmaswitch == 0:
+        cur.execute('''CREATE TABLE '''+ target +''' AS
+                   SELECT desig FROM '''+ source +''' WHERE Type IS NULL AND
+                   c3645 <= 1.4 * (c4558 - 0.7) + 0.15 AND
+                   c3645 <= 1.65''')
+    else:
+        cur.execute('''CREATE TABLE '''+ target +''' AS
+           SELECT desig FROM '''+ source +''' WHERE Type IS NULL AND
+           c3645 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) <= 
+              1.4 * (c4558 + SQRT(SQUARE(dm4_5) + SQUARE(dm5_8)) - 0.7) + 0.15 AND
+           c3645 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) <= 1.65''')
+    return target
+----
+
+Function returns the name of the table containing extracted object `desig`. This table will be used to update object types in the master table.
+
+=== Extract Class I: `extract_1`
+
+Extract Class I objects
+
+Extract objects that satisfy *BOTH* of the following:
+
+[latexmath]
+++++
+\begin{align*}
+[4.5] - [5.8] > 0.7 \\\\
+[3.6] - [4.5] > 0.7
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_1(con, source):
+    cur = con.cursor()
+    target = source + '_1'
+    cur.execute('''CREATE TABLE '''+ target +''' AS 
+                   SELECT desig FROM '''+ source +''' WHERE
+                   Type IS NULL AND
+                   c4558 > 0.7 AND
+                   c3645 > 0.7''')
+    return target
+----
+
+Function returns the name of the table containing extracted object `desig`. This table will be used to update object types in the master table.
+
+=== Extract Class II: `extract_2`
+
+Extract Class II objects
+
+Extract objects that satisfy ALL of the following:
+
+[latexmath]
+++++
+\begin{align*}
+\sigma_3 &:= \sigma {[[4.5] - [8.0]]} \\\\
+\sigma_4 &:= \sigma {[[3.6] - [5.8]]} \\\\
+[4.5] - [8.0] - \sigma_3 &> 0.5 \\\\
+[3.6] - [5.8] - \sigma_4 &> 0.35 \\\\
+[3.6] - [5.8] + \sigma_4 &\leq \frac{0.14}{0.04} \times ([4.5] - [8.0] - \sigma_3 - 0.5) + 0.5 \\\\
+[3.6] - [4.5] - \sigma_2 &> 0.15.
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_2(con, source, sigmaswitch):
+    cur = con.cursor()
+    target = source + '_2'
+    if sigmaswitch == 0:
+        cur.execute('''CREATE TABLE '''+ target +''' AS 
+                       SELECT desig FROM '''+ source +''' WHERE Type IS NULL AND
+                       c4580 > 0.5 AND
+                       c3658 > 0.35 AND
+                       c3658 <= (0.14/0.04)*(c4580 - 0.5) + 0.5 AND
+                       c3645 > 0.15''')
+    else:
+        cur.execute('''CREATE TABLE '''+ target +''' AS 
+                       SELECT desig FROM '''+ source +''' WHERE Type IS NULL AND
+                       c4580 - SQRT(SQUARE(dm4_5) + SQUARE(dm8_0)) > 0.5 AND
+                       c3658 - SQRT(SQUARE(dm3_6) + SQUARE(dm5_8)) > 0.35 AND
+                       c3658 + SQRT(SQUARE(dm3_6) + SQUARE(dm5_8)) 
+                         <= (0.14/0.04)*(c4580 - SQRT(SQUARE(dm4_5) + SQUARE(dm8_0))-0.5) + 0.5 AND
+                       c3645 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) > 0.15''')
+    return target
+----
+
+
+=== Run Phase 1
+
+`run_phase1` takes two arguments: 
+* `master`: name of the master table created in data preparation
+* `constr`: a connection string to the database.
+
+`run_phase1` initializes a working copy of Phase 1 relevant data, sequentially extracts different types of objects and updates their `Type` in the master table.  
+
+[source, python]
+----
+def run_phase1(master, constr, sigmaswitch):
+    con = sql.connect(constr)
+    
+    #add math udf to sqlite
+    cu.add_math(con) <1> 
+    #initialize and create a working copy for phase1 containing desig, four IRAC channel mags and Type
+    wc = init(con, master)  <2>
+    cu.update_phase(con, master, wc, 1) <3>
+    
+    #extract and update PAH in the working copy
+    c19 = extract_19(con, wc)  <4>
+    cu.update_type(con, wc, c19, 19) <5>
+    cu.update_type(con, master, c19, 19) <6>
+    
+    #extract and update AGN
+    c29 = extract_29(con, wc)
+    cu.update_type(con, wc, c29, 29)
+    cu.update_type(con, master, c29, 29)
+    
+    c9 = extract_9(con, wc)
+    cu.update_type(con, wc, c9, 9)
+    cu.update_type(con, master, c9, 9)
+    
+    c20 = extract_20(con, wc, sigmaswitch)
+    cu.update_type(con, wc, c20, 20)
+    cu.update_type(con, master, c20, 20)
+    
+    c1 = extract_1(con, wc)
+    cu.update_type(con, wc, c1, 1)
+    cu.update_type(con, master, c1, 1)
+    
+    c2 = extract_2(con, wc, sigmaswitch)
+    cu.update_type(con, wc, c2, 2)
+    cu.update_type(con, master, c2, 2)
+    
+    return 0
+----
+<1> Sqlite3 does not contain `SQRT` and `SQUARE` functions. They are defined in the `cu` module and need to be added to SQLite3 before running SQL containing them. 
+<2> `wc` is the initialized working copy.
+<3> Update phase. 
+<4> Extract objects of a certain type.
+<5> Use extracted data to update `Type` in working copy.
+<6> Use extracted data to update `Type` in master table.
+
+To use this function: 
+
+[source, python]
+----
+run_phase1('gtw49', '/home/kecai/w49/w49.db', 0)
+----

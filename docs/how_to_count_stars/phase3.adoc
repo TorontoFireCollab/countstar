@@ -1,0 +1,195 @@
+:stem: latexmath
+
+== Phase III
+
+Adding and checking YSOs with MIPS 24 micron photometry.
+
+=== Initialize Data with `init`
+
+Extract data with MIPS 24 micron detection with σ < 0.1 mag. 
+
+[source, python]
+----
+def init(con, source):
+    cur = con.cursor()
+    target = source + '_p3'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT 
+                   desig, 
+                   m3_6, m4_5, m5_8, m8_0, m24, 
+                   c3624, c4524, c5824, c8024, c3658,
+                   Type 
+                   FROM '''+ source +''' WHERE
+                   (m24 IS NOT NULL) AND
+                   dm24 < 0.1 AND
+                   (dm3_6 < 0.2 OR m3_6 IS NULL) AND
+                   (dm4_5 < 0.2 OR m4_5 IS NULL) AND
+                   (dm5_8 < 0.2 OR m5_8 IS NULL) AND
+                   (dm8_0 < 0.2 OR m8_0 IS NULL)''')
+    return target
+----
+
+
+=== Extract Transition Disks with `extract_3`
+
+Sources that were considered photospheric (Class I or Class II) in Phase 1 or Phase 2 are identified as "transition disks" if they satisfy ONE of the following:
+
+[latexmath]
+++++
+\begin{align*}
+[5.8] - [24] &> 2.5 \\
+[4.5] - [24] &> 2.5 \\
+\end{align*}
+++++
+
+Also apply a distance-dependent brightness cutoff latexmath:[\zeta_{36}] to [3.6] to minimize inclusion of extragalactic contaminants:
+
+[latexmath]
+++++
+\begin{align*}
+[3.6] &< \zeta_{36}
+\end{align*}
+++++
+
+
+[source, python]
+----
+def extract_3(con, source, cutoff36):
+    #flag what were considered photospheric to transition disks
+    cur = con.cursor()
+    target = source + '_3'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT
+                   desig FROM '''+ source +''' WHERE 
+                   (Type = 1 OR 2)AND 
+                   (c5824 > 2.5 OR c4524 > 2.5)
+                   AND m3_6 < ?
+                   ''', [cutoff36])
+    return target
+----
+
+=== Extract Class I*
+
+Identify sources as deeply embedded protostar if they lack detections in some IRAC bands but satisfy BOTH of the following (bright MIPS photometry):
+
+[latexmath]
+++++
+\begin{align*}
+[24] &< \zeta_{24} \\
+[X] - [24] &> 4.5
+\end{align*}
+++++
+
+where latexmath:[\zeta_{24}] is the distant-dependent brightness cutoff to mitigate extragalactic contamination and [X] is the photometry for the longest wavelength IRAC detection available in the catalog.
+
+[source, python]
+----
+def extract_18(con, source, cutoff24):
+    cur = con.cursor()
+    target = source + '_18'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS 
+                     SELECT desig FROM (SELECT desig, 
+                      CASE
+                      WHEN m8_0 IS NOT NULL THEN c8024
+                      WHEN (m8_0 IS NULL) AND (m5_8 IS NOT NULL) THEN c5824
+                      WHEN (m8_0 IS NULL) AND (m5_8 IS NULL) AND (m4_5 IS NOT NULL) THEN c4524
+                      WHEN (m8_0 IS NULL) AND (m5_8 IS NULL) AND (m4_5 IS NULL) AND (m3_6 IS NOT NULL) THEN c3624
+                      END AS cX_24
+                     FROM ''' + source + ''' WHERE m24 < ?)
+                    WHERE cX_24 > 4.5''', [cutoff24])
+    return target
+----
+
+=== Reinclude Protostars (Class I)
+
+Reinclude sources as protostars (Class I) that were previously identified as AGNs and shock emissions if they satisfy ALL of the following:
+ 
+[latexmath]
+++++
+\begin{align*}
+[24] &< \zeta_{24} \\
+[3.6] - [5.8] &> 0.5 \\
+[4.5] - [24] &> 4.5 \\
+[8.0] - [24] &> 4
+\end{align*}
+++++
+
+where latexmath:[\zeta_{24}] is a distance-dependent brightness cutoff for 24 micron to eliminate extragalactic contaminants. 
+
+[source, python]
+----
+def reflag_299_to_1(con, source, cutoff24):
+    cur = con.cursor()
+    target = source + '_1_from_29_9'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+ source +''' WHERE 
+                   (Type = 29 OR Type = 9) AND 
+                   m24 > ? AND
+                   c3658 > 0.5 AND
+                   c4524 > 4.5 AND
+                   c8024 > 4''', [cutoff24])
+    return target
+----
+
+=== Re-identify Protostars (Class I) as Class II
+
+All previously identified protostars (Class I) that have 24 micron detections are identified as Class II if they satisfy EITHER of the following:
+
+[latexmath]
+++++
+\begin{align*}
+[5.8] - [24] &\leq 4; \text{ if possess 5.8 micron} \\
+[4.5] - [24] &\leq 4; \text{ if do not possess 5.8 micron}
+\end{align*}
+++++
+
+[source, python]
+----
+def reflag_1_to_2(con, source):
+    cur = con.cursor()
+    target = source+'_2_from_1'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+source+''' WHERE 
+                   Type = 1 AND 
+                   (m5_8 IS NOT NULL AND c5824 <=4) OR
+                   (m5_8 IS NULL AND c4524 <=4)''')
+    return target
+----
+
+=== Run Phase 3
+
+[source, python]
+----
+def run_phase3(master, constr, cutoff36, cutoff24):
+    con = sql.connect(constr)
+    cur = con.cursor()
+    
+    wc = init(con, master)
+    cu.update_phase(con, master, wc, 0) <1>
+    
+    c3 = extract_3(con, wc, cutoff36)
+    cu.update_type(con, master, c3, 3)
+    cu.update_type(con, wc, c3, 3)
+    
+    #extract ClassI*
+    c18 = extract_18(con, wc, cutoff24) 
+    cu.update_type(con, master, c18, 1)
+    cu.update_type(con, wc, c18, 1)
+    
+    #reflag AGN and shock emissions as classI
+    c1f299 = reflag_299_to_1(con, wc, cutoff24) <2>
+    cu.update_type(con, master, c1f299, 1)
+    cu.update_type(con, wc, c1f299, 1)
+    
+    #reflag previous class I to classII
+    c2f1 = reflag_1_to_2(con, wc)
+    cu.update_type(con, master, c2f1, 2)
+    cu.update_type(con, wc, c2f1, 2)
+    
+    return 0
+----
+<1> We follow Gutermuth's Phase labeling convention. Objects that are identified/updated in Phase III have value `0` in their `Phase` field.
+<2> Reflagged sources are extracted into a new table and then used to update Type in the master table.
+
+To use `run_phase3`, do
+
+[source, python]
+----
+run_phase3('gtw49', '/home/kecai/w49/w49.db', 20, 20)
+----

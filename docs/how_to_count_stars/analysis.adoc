@@ -1,0 +1,76 @@
+:imagesdir: images
+
+== Analysis
+
+=== Possible Reasons of Difference
+
+* Distance dependent brightness cutoff
+* 1 Standard deviation fuzzying
+* Class 0 classification
+
+=== Type Counts
+
+[source, sql]
+----
+select Type, count(*) from gtw49 group by Type;
+|328054
+0|166
+1|208
+2|3054
+3|72
+9|11
+12|198
+19|29
+20|646
+29|4
+select oType, count(*) from gtw49 group by oType;
+-100|81097
+0|46
+1|250
+2|2839
+3|149
+9|11
+12|212
+19|53
+20|639
+29|4
+99|247142
+----
+
+=== Class I
+
+image::c5880c4558_1.png[align=center]
+//image::c5880c4558_1new.png[align=center]
+image::c4580c3658_1.png[align=center]
+//image::c4580c3658_1new.png[align=center]
+image::c4580m4_5_1.png[align=center]
+//image::c4580m4_5_1new.png[align=center]
+image::c4580c3645_1.png[align=center]
+//image::c4580c3645_1new.png[align=center]
+image::c4558c3645_1.png[align=center]
+//image::c4558c3645_1new.png[align=center]
+image::c5824c4558_1.png[align=center]
+//image::c5824c4558_1new.png[align=center]
+image::c4524c3645_1.png[align=center]
+//image::c4524c3645_1new.png[align=center]
+
+=== Class II
+
+image::c5880c4558_2.png[align=center]
+image::c4580c3658_2.png[align=center]
+image::c4580m4_5_2.png[align=center]
+image::c4580c3645_2.png[align=center]
+image::c4558c3645_2.png[align=center]
+image::c5824c4558_2.png[align=center]
+image::c4524c3645_2.png[align=center]
+
+=== Notes
+
+lynn Hillerbrand, 
+mass luminosity relation
+L(K)
+
+dN/dK, dN/dM3.8, peak of dN/dK//
+single color luminosity of and bolometric luminosity
+
+integral of dN/dK

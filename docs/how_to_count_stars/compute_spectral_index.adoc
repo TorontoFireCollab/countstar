@@ -1,0 +1,60 @@
+:stem: latexmath
+
+== Compute Spectral Index
+
+Spectral index 
+
+[latexmath]
+++++
+\alpha = \frac{\partial \log(\lambda F_{\lambda})}{\partial \log(\lambda) }
+++++
+
+Compute values of
+
+[latexmath]
+++++
+ \frac{\log(\lambda_1 F_{\lambda_1}) - \log(\lambda_2 F_{\lambda_2})}{\log(\lambda_1) -\log(\lambda_2)   }
+++++
+
+between neighboring passbands for bands 2.16 micron (2MASS Ks), 3.6 micron, 4.5 micron, 5.8 micron, 8.0 micron and 24 micron.
+
+If catalog only reports magnitudes, use the equivalent expression:
+
+[latexmath]
+++++
+1 - \frac{0.4(m_1 - m_2)}{\log(\lambda_1/\lambda_2)}
+++++
+
+
+* latexmath:[\alpha]'s|Bands|latexmath:[\log(\lambda_2/\lambda_1)]
+* latexmath:[\alpha_1]|2.16 and 3.6|latexmath:[\log(2.16/3.6) = -0.222]
+* latexmath:[\alpha_2]|3.6 and 4.5|latexmath:[\log(3.6/4.5) = -0.0969]
+* latexmath:[\alpha_3]|4.5 and 5.8|latexmath:[\log(4.5/5.8) = -0.110]
+* latexmath:[\alpha_4]|5.8 and 8.0|latexmath:[\log(5.8/8.0) = -0.140]
+* latexmath:[\alpha_5]|8.0 and 24|latexmath:[\log(8.0/24) = -0.477]
+
+
+
+[source, python]
+----
+def compute_alpha(constr, source):
+    con = sql.connect(constr)
+    cur = con.cursor()
+    target = source+'_alpha'
+    cur.execute('''CREATE TABLE '''+ target +''' AS 
+                   SELECT desig, Type, mKs, m3_6, m4_5, m5_8, m8_0, m24,
+                   1 + 0.4 * cK36/0.222 AS alpha1,
+                   1 + 0.4 * c3645/0.0969 AS alpha2,
+                   1 + 0.4 * c4558/0.110 AS alpha3,
+                   1 + 0.4 * c5880/0.140 AS alpha4,
+                   1 + 0.4 * c8024/0.477 AS alpha5
+                   FROM '''+ source +''' WHERE Type = 1 OR Type = 2''')
+    return 0
+----
+
+To use this function, do
+
+[source, python]
+----
+compute_alpha('/home/kecai/w49/w49test.db', 'gtw49')
+----

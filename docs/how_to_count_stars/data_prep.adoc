@@ -1,0 +1,84 @@
+:source-highlighter: pygments
+:pygments-style: autumn
+
+== Data Preparation
+
+
+=== Required Packages
+
+[source, python]
+----
+import pandas as pd
+import pandas.io.sql as pd_sql
+import sqlite3 as sql
+import numpy as np
+from pandas import DataFrame
+import math
+----
+
+=== Prepare Original Table
+
+* Download all data in the relevant catalog into a ASCII file. 
+
+* Read into DataFrame:
++
+[source, python]
+----
+gutermuth = pd.read_csv('/home/kecai/w49/gutermuth.tbl', sep = ',', header = None, skiprows = 1, names = ['desig', 'ra', 'dec',
+                       'm3_6', 'm4_5', 'm5_8', 'm8_0', 'm24', 'mJ', 'mH', 'mKs',
+                       'dm3_6', 'dm4_5', 'dm5_8', 'dm8_0', 
+                       'dm24', 'dmJ', 'dmH', 'dmKs', 
+                       'Type', 'Phase', 'f_Type', 'alpha', 'M', 'W'
+                       ], na_values = 'null')
+----
++
+`sep` defines the field delimiter in the text data. Vizier data uses `,` as the field delimiter, whereas data downloaded from Gator uses a variable number of spaces. In this case, use `sep = '\s+'`.
+
+* Write into sqlite3
++
+[source, sql]
+----
+con = sql.connect('/home/kecai/w49/w49.db')
+gutermuth.to_sql("gtw49_original", con, if_exists = 'replace', index = False)
+con.commit()
+----
+
+* Inside database xxx.db, this creates a table by the name `xxx_original`. This table is only used as the data source for the master table and is not meant to be altered.
+
+=== Prepare Master Table
+
+Master table will be used to store Phase, Type and Flag values of all relevant objects. Results of each phase will be updated to this table. 
+
+* Create new table with rows from original table, computed colors and three empty columns: Phase, Type and f_Type (flag)
++
+[source, python]
+----
+con = sql.connect('/home/kecai/w49/w49test.db')
+cur = con.cursor()
+cur.execute('''CREATE TABLE gtw49 AS 
+               SELECT desig, ra, dec, m3_6, m4_5, m5_8, m8_0, m24, mJ, mH, mKs,
+               dm3_6, dm4_5, dm5_8, dm8_0, dm24, dmJ, dmH, dmKs, 
+               m3_6 - m4_5 AS c3645, 
+               m3_6 - m5_8 AS c3658,
+               m3_6 - m8_0 AS c3680, 
+               m4_5 - m5_8 AS c4558,
+               m4_5 - m8_0 AS c4580,
+               m5_8 - m8_0 AS c5880,
+               mH - mKs AS cHK,
+               mJ - mH AS cJH,
+               mKs - m3_6 AS cK36,
+               m3_6 - m24 AS c3624,
+               m4_5 - m24 AS c4524,
+               m5_8 - m24 AS c5824,
+               m8_0 - m24 AS c8024,
+               Type AS oType,
+               Phase AS oPhase,
+               f_Type AS of_Type,
+               NULL AS Type, 
+               NULL AS Phase, 
+               NULL AS f_Type FROM gtw49_original''' )
+cur.execute('''CREATE INDEX gtw49_desig ON gtw49 (desig)''') <1>
+----
+<1> Create an index on field `desig` because this field will be queried frequently for updating Phase, Type and Flag values.
+
+

@@ -1,0 +1,43 @@
+== Running Gutermuth Criteria
+
+
+[source, python]
+----
+import numpy as np
+import pandas as pd
+import pandas.io.sql as pd_sql
+from pandas import DataFrame
+import sqlite3 as sql
+import math
+import catalog_utils as cu
+
+
+#Prepare Data
+
+gutermuth = pd.read_csv('/home/kecai/w49/gutermuth.tbl', sep = ',', header = None, skiprows = 1, names = ['desig', 'ra', 'dec',
+                       'm3_6', 'm4_5', 'm5_8', 'm8_0', 'm24', 'mJ', 'mH', 'mKs',
+                       'dm3_6', 'dm4_5', 'dm5_8', 'dm8_0', 'dm24', 'dmJ', 'dmH', 'dmKs', 
+                       'Type', 'Phase', 'f_Type', 'alpha', 'M', 'W'
+                       ], na_values = 'null')
+                       
+con = sql.connect('/home/kecai/w49/w49.db')
+cur = con.cursor()
+cur.execute('''CREATE TABLE gtw49 AS 
+               SELECT desig, ra, dec, m3_6, m4_5, m5_8, m8_0, m24, mJ, mH, mKs,
+               dm3_6, dm4_5, dm5_8, dm8_0, dm24, dmJ, dmH, dmKs, 
+               NULL AS Type, NULL AS Phase, NULL AS f_Type FROM gtw49_original''' )
+
+cur.execute('''CREATE INDEX gtw49_desig ON gtw49 (desig)''')
+
+
+#Run Phase 1
+
+#Run Phase 2
+
+#Run Phase 3
+
+#Run Phase AGB
+
+#Compute Spectral Index
+----
+

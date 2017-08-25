@@ -1,0 +1,261 @@
+:stem: latexmath
+
+== Phase II
+
+=== Initialize with `init`
+
+Intialize data used for Phase 2. Phase 2 is applied to sources that lack detections at [5.8] or [8.0], but have high quality (σ < 0.1 mag) 2MASS bands (H and Ks are required at minimum, J is used where present).
+
+[source, python]
+----
+def init(con, source):
+    cur = con.cursor()
+    target = source + '_p2'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS 
+                   SELECT desig, 
+                   m3_6, m4_5, mJ, mH, mKs, dm3_6, dm4_5, dmJ, dmH, dmKs, 
+                   c3645, cHK, cJH, cK36
+                   FROM '''
+                   + source + ''' WHERE 
+                   (m5_8 IS NULL OR m8_0 IS NULL) AND
+                   (dmH < ? AND dmKs < ? AND (dmJ < ? OR mJ IS NULL)) AND
+                   dm3_6 < ? AND
+                   dm4_5 < ?''', [0.1, 0.1, 0.1, 0.2, 0.2]) 
+                                #Relax the condition on dm3_6, dm4_5? not explicit in paper
+    return target
+----
+
+=== Color Excess Ratios for Computing Intrinsic Colors
+
+Previously determined color excess ratios will be used to compute intrinsic colors:
+
+[latexmath, label=ratios]
+++++
+\begin{align*}
+\frac{E_{J-H}}{E_{H-K}} &= 1.73 \\\\
+\frac{E_{H-K}}{E_{K-[3.6]}} &= 1.49 \\\\
+\frac{E_{H-K}}{E_{K-[4.5]}} &= 1.17 \\\\
+\frac{E_{[3.6] -[4.5]}}{E_{H-K}} &= [\frac{E_{H-K}}{E_{K-[4.5]}}]^{-1} - [\frac{E_{H-K}}{E_{K-[3.6]}}]^{-1}  = 0.184
+\end{align*}
+++++
+
+
+=== Compute Intrinsic [H-K] color with `compute_icHK`
+
+For objects that *have* J detections:
+
+
+[latexmath]
+++++
+\begin{align*}
+[J-H]_0 &= 0.58 \times [H-K]_0+0.52; \text{ for } [H-K]_0 >0.14 \\
+[J-H]_0 &= 0.6; \text{ for } [H-K]_0 \leq 0.14 \\
+[H-K]_0 &= [H-K]_m - ([J-H]_m - [J-H]_0) \times \frac{E_{H-K}}{E_{J-H}}  \\
+[H-K]_0 &= \frac{[J-H]_m- \frac{E_{J-H}}{E_{H-K}} \times [H-K]_m - 0.52}{0.58 - \frac{E_{J-H}}{E_{H-K}}}
+\end{align*}
+++++
+
+Doing some algebra, we get the following computation friendly expressions:
+
+[latexmath]
+++++
+\begin{align*}
+[H-K]_0 &= 1.5[H-K]_m - 0.87[J-H]_m + 0.45; \text{ if } [H-K]_m > -0.21 + 0.58[J-H]_m \\
+[H-K]_0 &= [H-K]_m - 0.58[J-H]_m + 0.35; \text{ if } [H-K]_m \leq -0.21 + 0.58[J-H]_m
+\end{align*}
+++++
+
+For objects that *lack* J detections:
+
+[latexmath]
+++++
+\begin{align*}
+[H-K]_0 &= 1.33 \times [[3.6]-[4.5]]_0+0.133; &\text{ for } [[3.6]-[4.5]]_0 >0.06 \\
+[H-K]_0 &= 0.2; &\text{ for } [[3.6]-[4.5]]_0 \leq 0.06 \\
+[H-K]_0 &= [H-K]_m - \frac{E_{[3.6] -[4.5]}}{E_{H-K}}^{-1}([[3.6-[4.5]]_m-[[3.6]-[4.5]]_0)  \\
+[H-K]_0 &= \frac{1.33 \times (\frac{E_{[3.6] -[4.5]}}{E_{H-K}}[H-K]_m-[[3.6]-[4.5]]_m) - 0.133}{1.33\frac{E_{[3.6] -[4.5]}}{E_{H-K}}-1} 
+\end{align*}
+++++
+
+Doing some algebra, we get the following computation friendly expressions:
+
+[latexmath]
+++++
+\begin{align*}
+[H-K]_0 &= 1.76\times[[3.6] - [4.5]]_m - 0.32[H-K]_m + 0.176; \text{ if } [H-K]_m < -0.11 + 5.4[[3.6] - [4.5]]_m\\
+[H-K]_0 &= 0.2; \text{ if } [H-K]_m \geq -0.13 + 5.4[[3.6] - [4.5]]_m
+\end{align*}
+++++
+
+Note that these conditions have overlap. 
+
+[source, python]
+----
+def compute_icHK(con, source):
+    cur = con.cursor()
+    target = source + '_icHK'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS SELECT *,
+                   CASE
+                   WHEN (mJ IS NOT NULL) AND cHK > 0.58 * cJH - 0.21 
+                     THEN 1.5 * cHK - 0.87 * cJH + 0.45
+                   WHEN (mJ IS NOT NULL) AND cHK <= 0.58 * cJH - 0.21
+                     THEN cHK - 0.58 * cJH + 0.35
+                   WHEN mJ IS NULL AND cHK < -0.12 + 5.4 * c3645 
+                     THEN 1.76 * c3645 - 0.32 * cHK + 0.176
+                   WHEN mJ IS NULL AND cHK >= -0.12 + 5.4 * c3645 
+                     THEN 0.2
+                   END AS icH_K
+                   FROM '''+ source)
+    return target
+----
+
+=== Compute Intrinsic [K - [3.6]] and [[3.6] - [4.5]] Colors with `compute_icK36_ic3645`
+
+[latexmath]
+++++
+\begin{align*}
+[K-[3.6]]_0 &= [K-[3.6]]_m -([H-K]_m - [H-K]_0)\frac{E_{K-[3.6]}}{E_{H-K}} \\
+[[3.6]-[4.5]]_0 &= [[3.6]-[4.5]]_m - ([H-K]_m -[H-K]_0)\frac{E_{[3.6] -[4.5]}}{E_{H-K}}
+\end{align*}
+++++
+
+[source, python]
+----
+def compute_icK36_ic3645(con, source):
+    cur = con.cursor()
+    target = source + '_icK36_ic3645'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS SELECT *, 
+                   cK36 - (cHK - icH_K) * 0.671 AS icK_36,
+                   c3645 - (cHK - icH_K) * 0.184 AS ic36_45 FROM '''+ source)
+    return target
+----
+
+
+=== Extract Addtional YSO's with `extract_yso`
+
+Identify additional YSO's as those sources whose intrinsic colors obey all of the following:
+
+[latexmath]
+++++
+\begin{align*}
+\sigma_2 &:= \sigma \{[[3.6] - [4.5]]_m\} \\
+\sigma_5 &:= \sigma \{[[K] - [3.6]]_m\} \\
+[[3.6] - [4.5]]_0 - \sigma_2 &> 0.101 \\
+[K - [3.6]]_0 - \sigma_5 &> 0 \\
+[K - [3.6]]_0 - \sigma_5 &> -2.85714 \times ([[3.6] - [4.5]]_0 - \sigma_2 - 0.101) + 0.5
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_yso(con, source, sigmaswitch):
+    cur = con.cursor()
+    target = source + '_yso'
+    if sigmaswitch == 0:
+        cur.execute('''CREATE TABLE '''+ target + ''' AS SELECT * FROM '''+ source + ''' WHERE
+                   ic36_45 > 0.101 AND
+                   icK_36 > 0 AND
+                   icK_36 > -2.85714 * (ic36_45 - 0.101) + 0.5''' )
+    
+    else:
+        cur.execute('''CREATE TABLE '''+ target + ''' AS SELECT * FROM '''+ source + ''' WHERE
+                   ic36_45 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) > 0.101 AND
+                   icK_36 - SQRT(SQUARE(dmKs) + SQUARE(dm3_6)) > 0 AND
+                   icK_36 - SQRT(SQUARE(dmKs) + SQUARE(dm3_6)) > -2.85714 * (ic36_45 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) - 0.101) + 0.5''' )
+    return target
+----
+
+=== Extract Class I from Additional YSO's with `extract_1`
+
+From the table created by `extract_yso`, identify as Class I objects that satisfy:
+
+[latexmath]
+++++
+\begin{align*}
+[K-[3.6]]_0 -\sigma_5 &> -2.85714 \times ([[3.6]-[4.5]_0 - \sigma_2 -0.401]) + 1.7\\
+[3.6] &< \zeta_{361}
+\end{align*}
+++++
+
+where latexmath:[\zeta_{361}] is a distance-dependent brightness cutoff for Class I objects to minimize inclusion of dim extraglactic contaminants. 
+
+[source, python]
+----
+def extract_1(con, source, cutoff361, sigmaswitch):
+    cur = con.cursor()
+    target = source + '_1'
+    if sigmaswitch == 0:
+        cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+ source +''' WHERE
+                   ic36_45 > -2.85714 * (ic36_45 - 0.401) + 1.7
+                   AND
+                   m3_6 < ?''', [cutoff361])
+    else:
+        cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+ source +''' WHERE
+                   ic36_45 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) > 
+                   -2.85714 * (ic36_45 - SQRT(SQUARE(dm3_6) + SQUARE(dm4_5)) - 0.401) + 1.7
+                   AND
+                   m3_6 < ?''', [cutoff361])
+    return target
+----
+
+=== Extract Class II from Additional YSO's with `extract_2`
+
+All objects that were produced by `extract_yso` but not Class I are considered Class II. To minimize inclusion of extraglactic contaminants, apply distance-dependent [3.6] brightness cutoff:
+
+[latexmath]
+++++
+\begin{align*}
+[3.6] < \zeta_{362}
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_2(con, yso, c1, cutoff362):
+    cur = con.cursor()
+    target = yso+'_2'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+ yso +'''
+    WHERE 
+    m3_6 < ?
+    AND
+    desig NOT IN (SELECT desig FROM '''+ c1 +''')''', [cutoff362])
+    return target
+----
+
+
+
+=== Running Phase 2 with `run_phase2`
+
+[source, python]
+----
+def run_phase2(master, constr, cutoff361, cutoff362, sigmaswitch):
+    con = sql.connect(constr)
+    
+    #add math udf to sqlite
+    cu.add_math(con)
+    
+    #initialize a working copy containing relevant data
+    wc = init(con, master)
+    cu.update_phase(con, master, wc, 2)
+    
+    #compute three intrinsic colors
+    icHK = compute_icHK(con, wc)
+    icK36_ic3645 = compute_icK36_ic3645(con, icHK)
+    
+    yso = extract_yso(con, icK36_ic3645, sigmaswitch)
+    
+    c1 = extract_1(con, yso, cutoff361, sigmaswitch)
+    cu.update_type(con, master, c1, 1)
+    
+    c2 = extract_2(con, yso, c1, cutoff362)
+    cu.update_type(con, master, c2, 2)
+    
+    return 0
+----
+
+To run `run_phase2`, do
+
+[source, python]
+----
+run_phase2('gtw49', '/home/kecai/w49/w49.db', 15.2, 15.2, 0)
+----

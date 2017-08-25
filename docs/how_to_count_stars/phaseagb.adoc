@@ -1,0 +1,103 @@
+:stem: latexmath
+
+== Phase AGB
+
+If the star formation region is very far away (e.g. W49), possible higher level of contamination should be taken into account. Phase AGB relabel previously identified YSOs as AGB stars.
+
+=== Initialize Data
+
+Extract objects that are previously identified as Class I and II:
+
+[source, python]
+----
+def init(con, source):
+    cur = con.cursor()
+    target = source+'_pa'
+    cur.execute('''CREATE TABLE '''+ target +''' AS 
+                   SELECT desig, m3_6, m4_5, m5_8, m8_0, 
+                   c3645, c3680, 
+                   Phase, Type, f_Type
+                   FROM '''+ source +''' WHERE Type = 1 OR Type = 2''')
+    return target
+----
+
+=== Extract AGB stars: `extract_12`
+
+Identify as AGBs if objects satisfy EITHER of the following two pairs of conditions:
+
+[latexmath]
+++++
+\begin{align*}
+3 &< [3.6] < 9.5 \text{ and } 0.2 < [3.6] - [4.5] < 1.25\\
+3.5 &< [3.6] < 9.5 \text{ and } 0.4 < [3.6] - [8.0] < 2.6
+\end{align*}
+++++
+
+[source, python]
+----
+def extract_12(con, source):
+    cur = con.cursor()
+    target = source+'_12'
+    cur.execute('''CREATE TABLE '''+ target +''' AS SELECT desig FROM '''+ source +''' WHERE
+                   (m3_6 > 3 AND 
+                    m3_6 < 9.5 AND 
+                    c3645 > 0.2 AND 
+                    c3645 < 1.25) 
+                   OR
+                   (m3_6 > 3.5 AND 
+                    m3_6 < 9.5 AND 
+                    c3680 > 0.4 AND 
+                    c3680 < 2.6)''')
+    return target
+----
+
+=== Flag as `uc`
+
+Extragalactic and background contaminant elimination require 5.8 and 8.0 micron detections. For YSOs classified in Phase II that lack these detections, apply a distant dependent brightness cutoff to [3.6]:
+
+[latexmath]
+++++
+[3.6] \geq \zeta_{36}
+++++
+
+Objects that satisfy the condition are extracted and will be used to update `f_Type` as `uc`:
+
+[source, python]
+----
+def extract_uc(con, source, cutoff36):
+    cur = con.cursor()
+    target = source + '_uc'
+    cur.execute('''CREATE TABLE '''+ target + ''' AS SELECT desig FROM '''+ source + ''' WHERE 
+                   Phase = 2 AND 
+                   (m5_8 IS NULL OR m8_0 IS NULL) AND
+                   m3_6 > ?''', [cutoff36])
+    return target
+----
+
+=== Run Phase AGB
+
+[source, python]
+----
+def run_phaseagb(master, constr, cutoff36):
+    con = sql.connect(constr)
+    
+    wc = init(con, master)
+    cu.update_phase(con, master, wc, 3)
+    
+    c12 = extract_12(con, wc)
+    cu.update_type(con, master, c12, 12)
+    cu.update_type(con, wc, c12, 12)
+    
+    cuc = extract_uc(con, wc, cutoff36)
+    cu.update_flag(con, master, cuc, 'uc')
+    cu.update_flag(con, wc, cuc, 'uc')
+    
+    return 0
+----
+
+To use this function, do:
+
+[source, python]
+----
+run_phaseagb('gtw49', '/home/kecai/w49/w49.db', 20)
+----
