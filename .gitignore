@@ -1,1 +1,3 @@
-jupyter_notebook/play
+*.html
+jupyter_notebooks/play/*
+jupyter_notebooks/.ipynb_checkpoints/*
