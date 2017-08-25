@@ -1,0 +1,114 @@
+SELECT load_extension('/home/kecai/w49/libsqlitefunctions.so');
+
+--DATA PREPARATION GLIMPSE
+CREATE TABLE gl_phase2 AS SELECT *,
+mJ-mH AS cJ_H, 
+mH-mKs AS cH_K, 
+mKs-m3_6 AS cK_36, 
+SQRT(SQUARE(dm3_6)+SQUARE(dm4_5)) AS dc36_45, 
+SQRT(SQUARE(dmKs)+SQUARE(dm3_6)) AS dcK_36
+FROM gl_phase2_raw WHERE
+(m5_8 IS NULL OR
+m8_0 IS NULL OR
+mJ IS NULL) AND
+dmJ < 0.1 AND
+dmH < 0.1 AND
+dmKs < 0.1;
+
+
+--DATA PREPARATION GUTERMUTH
+CREATE TABLE gt_phase2 AS SELECT *, 
+mJ-mH AS cJ_H,
+mH-mKs AS cH_K,
+mKs-m3_6 AS cK_36,
+SQRT(SQUARE(dmKs)+SQUARE(dm3_6)) AS dcK_36
+FROM gtw49 WHERE
+(m5_8 IS NULL OR
+m8_0 IS NULL OR
+mJ IS NULL) AND
+dmJ < 0.1 AND
+dmH < 0.1 AND
+dmKs < 0.1;
+
+
+
+--CALCULATE INTRINSIC H-K COLOR USING J PHOTOMETRY
+CREATE TABLE gl_phase2_icHK_J AS SELECT *, 
+CASE
+WHEN cH_K > 0.58*cJ_H - 0.21 THEN 1.5*cH_K - 0.87*cJ_H+0.45
+ELSE cH_K - 0.58*cJ_H + 0.35 
+END AS icH_K
+FROM gl_phase2;
+
+--CALCULATE INTRINSIC H-K WITHOUT USING J PHOTOMETRY
+CREATE TABLE gl_phase2_icHK_noJ AS SELECT *,  
+CASE
+WHEN cH_K < -0.12 + 5.4*c36_45  THEN 1.76*c36_45 - 0.32*cH_K+0.043 
+ELSE 0.2
+END AS icH_K
+FROM gl_phase2;
+
+
+--CALCULATE INTRINSIC H-K COLOR ON GUTERMUTH DATA
+CREATE TABLE gt_phase2_icHK AS SELECT *,
+CASE
+WHEN mJ IS NOT NULL AND cH_K > 0.58*cJ_H - 0.21 THEN 1.5*cH_K - 0.87*cJ_H+0.45
+WHEN mJ IS NOT NULL AND cH_K <= 0.58*cJ_H - 0.21 THEN cH_K - 0.58*cJ_H+0.35
+WHEN mJ IS NULL AND cH_K < -0.12 + 5.4*c36_45 THEN 1.76*c36_45 - 0.32*cH_K+0.043
+WHEN mJ IS NULL AND cH_K >= -0.12 + 5.4*c36_45 THEN 0.2
+END AS icH_K
+FROM gt_phase2;
+
+--CALCULATE INTRINSIC K_36 COLOR AND 36_45 COLOR
+CREATE TABLE gl_phase2_icHK_icK36_ic3645_J AS SELECT *, 
+cK_36 - (cH_K - icH_K)*0.671 AS icK_36,
+c36_45 - (cH_K - icH_K)*0.184 AS ic36_45
+FROM gl_phase2_icHK_J;
+
+CREATE TABLE gl_phase2_icHK_icK36_ic3645_noJ AS SELECT *,
+cK_36 - (cH_K - icH_K)*0.671 AS icK_36,
+c36_45 - (cH_K - icH_K)*0.184 AS ic36_45
+FROM gl_phase2_icHK_noJ;
+
+CREATE TABLE gt_phase2_icHK_icK36_ic3645 AS SELECT *,
+cK_36 - (cH_K - icH_K)*0.671 AS icK_36,
+c36_45 - (cH_K - icH_K)*0.184 AS ic36_45
+FROM gt_phase2_icHK;
+
+
+
+--EXTRACT PHASE2 YSOS
+CREATE TABLE gl_phase2_yso_J AS SELECT *,
+CASE 
+WHEN icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.401)+1.7 THEN '1'
+ELSE '2'
+END AS type
+FROM gl_phase2_icHK_icK36_ic3645_J
+WHERE 
+ic36_45 - dc36_45 > 0.101 AND
+icK_36 - dcK_36 > 0 AND
+icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.101)+0.5;
+
+CREATE TABLE gl_phase2_yso_noJ AS SELECT *,
+CASE
+WHEN icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.401)+1.7 THEN '1'
+ELSE '2'
+END AS type
+FROM gl_phase2_icHK_icK36_ic3645_noJ
+WHERE 
+ic36_45 - dc36_45 > 0.101 AND
+icK_36 - dcK_36 > 0 AND
+icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.101)+0.5;
+
+
+CREATE TABLE gt_phase2_yso AS SELECT *,
+CASE
+WHEN icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.401)+1.7 THEN '1'
+ELSE '2'
+END AS type_cal
+FROM gt_phase2_icHK_icK36_ic3645
+WHERE
+ic36_45 - dc36_45 > 0.101 AND
+icK_36 - dcK_36 > 0 AND
+icK_36 - dcK_36 > -2.85714*(ic36_45 - dc36_45 - 0.101)+0.5;
+

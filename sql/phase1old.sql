@@ -1,0 +1,20 @@
+--EXTRACT CLASSII OBJECTS
+CREATE TABLE gl2om AS SELECT * FROM gl_phase1_sans19_29_9 
+WHERE 
+c45_80 > 0.5 AND
+c36_58 > 0.35 AND
+c36_58 <= (0.14/0.04)*(c45_80 -0.5)+0.5;
+
+--ELIMIATE CLASSII OBJECTS
+CREATE TABLE gl_phase1_sans19_29_9_2om AS 
+SELECT a.* FROM 
+  gl_phase1_sans19_29_9 AS a
+  LEFT OUTER JOIN gl2om AS b
+  ON a.desig = b.desig 
+WHERE b.desig IS NULL;
+
+--EXTRACT CLASSI OR CLASS0 OBJECTS
+CREATE TABLE gl1or0om AS SELECT * FROM gl_phase1_sans19_29_9_2om 
+WHERE 
+c45_58 > 1 OR
+(c45_58 > 0.7 AND c45_58 <= 1.0 AND c36_45 > 0.7);
